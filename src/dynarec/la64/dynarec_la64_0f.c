@@ -698,6 +698,15 @@ uintptr_t dynarec64_0F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             VFMAX_S(v0, v0, v1);
             break;
 
+        case 0x77:
+            INST_NAME("EMMS");
+            // empty MMX, FPU now usable
+            mmx_purgecache(dyn, ninst, 0, x1);
+            /*emu->top = 0;
+            emu->fpu_stack = 0;*/
+            // TODO: Check if something is needed here?
+            break;
+
 #define GO(GETFLAGS, NO, YES, NATNO, NATYES, F, I)                                          \
     READFLAGS_FUSION(F, x1, x2, x3, x4, x5);                                                \
     i32_ = F32S;                                                                            \

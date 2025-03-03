@@ -14,9 +14,12 @@ typedef struct instsize_s instsize_t;
 #define LSX_CACHE_ST_F   2
 #define LSX_CACHE_ST_I64 3
 #define LSX_CACHE_MM     4
-#define LSX_CACHE_XMMW   5
-#define LSX_CACHE_XMMR   6
-#define LSX_CACHE_SCR    7
+#define EXT_CACHE_MMV    5
+#define LSX_CACHE_SS     6
+#define LSX_CACHE_SD     7
+#define LSX_CACHE_XMMW   8
+#define LSX_CACHE_XMMR   9
+#define LSX_CACHE_SCR    10
 
 typedef union lsx_cache_s {
     int8_t v;
@@ -45,10 +48,13 @@ typedef struct lsxcache_s {
     uint8_t         combined2;
     uint8_t         swapped;        // the combined reg were swapped
     uint8_t         barrier;        // is there a barrier at instruction epilog?
+    uint8_t         pushed;         // positive pushed value (to check for overflow)
+    uint8_t         poped;          // positive poped value (to check for underflow)    
     uint32_t        news;           // bitmask, wich neoncache are new for this opcode
     // fpu cache
     int8_t          x87cache[8];    // cache status for the 8 x87 register behind the fpu stack
     int8_t          x87reg[8];      // reg used for x87cache entry
+    int16_t         tags;           // similar to fpu_tags
     int8_t          freed[8];       // set when FFREE is used, -1 else
     int8_t          mmxcache[8];    // cache status for the 8 MMX registers
     sse_cache_t     ssecache[16];   // cache status for the 16 SSE(2) registers
