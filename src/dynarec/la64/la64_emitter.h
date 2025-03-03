@@ -864,6 +864,21 @@ f24-f31  fs0-fs7   Static registers                Callee
 
 #define AMAND_DBxw(rd, rk, rj) EMIT(type_3R(0b00111000011010110 | rex.w, rk, rj, rd))
 
+// Write FP exception flags, immediate
+#define FSFLAGSI(imm, s1) ADDI_W(s1, xZR, imm);MOVGR2FCSR(FCSR1, s1);
+// Read  FP exception flags to rd
+#define FRFLAGS(rd) MOVFCSR2GR(rd, FCSR1)
+// Inexact
+#define FR_NX 0
+// Underflow
+#define FR_UF 1
+// Overflow
+#define FR_OF 2
+// Divide by Zero
+#define FR_DZ 3
+// Invalid Operation
+#define FR_NV 4
+
 #define FLD_D(fd, rj, imm12) EMIT(type_2RI12(0b0010101110, imm12, rj, fd))
 #define FLD_S(fd, rj, imm12) EMIT(type_2RI12(0b0010101100, imm12, rj, fd))
 #define FST_D(fd, rj, imm12) EMIT(type_2RI12(0b0010101111, imm12, rj, fd))
@@ -2105,6 +2120,13 @@ LSX instruction starts with V, LASX instruction starts with XV.
 #define RCR_H(rd, rj, rk) EMIT(type_3R(0x69, rk, rj, rd))
 #define RCR_W(rd, rj, rk) EMIT(type_3R(0x6a, rk, rj, rd))
 #define RCR_D(rd, rj, rk) EMIT(type_3R(0x6b, rk, rj, rd))
+
+//  fcvt.d.ld: convert from long double (saved in two fpr) to double
+//  fcvt.ld.d: convert from double to long double, low part
+//  fcvt.ud.d: convert from double to long double, high part
+#define FCVT_D_LD(fd, fj, fk)   EMIT(type_3R(0b00000001000101010, fk, fj, fd))
+#define FCVT_LD_D(fd, fj)       EMIT(type_2R(0b0000000100010100111000, fj, fd))
+#define FCVT_UD_D(fd, fj)       EMIT(type_2R(0b0000000100010100111001, fj, fd))
 
 ////////////////////////////////////////////////////////////////////////////////
 
