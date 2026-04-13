@@ -846,7 +846,7 @@ uintptr_t dynarec64_660F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         v1 = fpu_get_scratch(dyn);
                         v2 = fpu_get_scratch(dyn);
                         VLDI(v1, ((0b000<<9)|27));
-                        la64_vpaes_invmixcolumns_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0, v2);
+                        la64_vpaes_invmixcolumns_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0);
                     } else {
                         GETEX(q1, 0, 0);
                         GETGX_empty(q0);
@@ -878,8 +878,9 @@ uintptr_t dynarec64_660F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_enc_tables, 7);
                         la64_vpaes_subbytes_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0);
                         VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
-                        VLDI(v1, ((0b000<<9)|27));
-                        la64_vpaes_mixcolumns_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0, v2);
+                        VLD(v1, x7, 7 * 16);
+                        VLD(v2, x7, 8 * 16);
+                        la64_vpaes_mixcolumns_xtime_lsx(dyn, ninst, q0, v1, v2, d0, d1, d2, v0);
                         VXOR_V(q0, q0, (q2 != -1) ? q2 : q1);
                     } else {
                         GETG;
@@ -951,8 +952,9 @@ uintptr_t dynarec64_660F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_dec_tables, 7);
                         VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
                         la64_vpaes_invsubbytes_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
-                        VLDI(v1, ((0b000<<9)|27));
-                        la64_vpaes_invmixcolumns_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0, v2);
+                        VLD(v1, x7, 7 * 16);
+                        VLD(v2, x7, 8 * 16);
+                        la64_vpaes_invmixcolumns_xtime_lsx(dyn, ninst, q0, v1, v2, d0, d1, d2, v0);
                         VXOR_V(q0, q0, (q2 != -1) ? q2 : q1);
                     } else {
                         GETG;
@@ -1531,7 +1533,7 @@ uintptr_t dynarec64_660F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         v0 = fpu_get_scratch(dyn);
                         v1 = fpu_get_scratch(dyn);
                         u8 = F8;
-                        la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_keygen_tables, 8);
+                       la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_keygen_tables, 8);
                         la64_vpaes_keygenassist_lsx(dyn, ninst, q0, q2, d0, d1, d2, v0, v1, u8);
                     } else {
                         GETG;

@@ -1313,8 +1313,10 @@ uintptr_t dynarec64_AVX_66_0F38(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t i
                 v0 = fpu_get_scratch(dyn);
                 v1 = fpu_get_scratch(dyn);
                 v2 = fpu_get_scratch(dyn);
-                VLDI(v2, ((0b000<<9)|27));
-                la64_vpaes_invmixcolumns_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                TABLE64(x7, (uintptr_t)la64_vpaes_dec_tables);
+                VLD(v1, x7, 7 * 16);
+                VLD(v2, x7, 8 * 16);
+                la64_vpaes_invmixcolumns_xtime_lsx(dyn, ninst, q0, v1, v2, d0, d1, d2, v0);
             } else {
                 GETEYx(q1, 0, 0);
                 GETGYx_empty(q0);
@@ -1351,14 +1353,16 @@ uintptr_t dynarec64_AVX_66_0F38(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t i
                     // the SubBytes helper so XVLDI can issue as early as OoO allows.
                     la64_vpaes_subbytes_lasx(dyn, ninst, q0, v1, d0, d1, d2, v0);
                     XVSHUF_B(q0, q0, q0, LA64_VPAES_T6);
-                    XVLDI(v2, ((0b000<<9)|27));
-                    la64_vpaes_mixcolumns_lasx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                    XVLD(v1, x7, 7 * 32);
+                    XVLD(v2, x7, 8 * 32);
+                    la64_vpaes_mixcolumns_xtime_lasx(dyn, ninst, q0, v1, v2, d0, d1, d2, v0);
                 } else {
                     la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_enc_tables, 7);
                     la64_vpaes_subbytes_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0);
                     VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
-                    VLDI(v2, ((0b000<<9)|27));
-                    la64_vpaes_mixcolumns_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                    VLD(v1, x7, 7 * 16);
+                    VLD(v2, x7, 8 * 16);
+                    la64_vpaes_mixcolumns_xtime_lsx(dyn, ninst, q0, v1, v2, d0, d1, d2, v0);
                 }
                 VXOR_Vxy(q0, q0, (s0 != -1) ? s0 : q2);
             } else {
@@ -1456,14 +1460,16 @@ uintptr_t dynarec64_AVX_66_0F38(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t i
                     la64_vpaes_load_tables_lasx(dyn, ninst, x7, (uintptr_t)la64_vpaes_dec_tables_xv, 7);
                     XVSHUF_B(q0, q0, q0, LA64_VPAES_T6);
                     la64_vpaes_invsubbytes_lasx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
-                    XVLDI(v1, ((0b000<<9)|27));
-                    la64_vpaes_invmixcolumns_lasx(dyn, ninst, q0, v1, d0, d1, d2, v0, v2);
+                    XVLD(v1, x7, 7 * 32);
+                    XVLD(v2, x7, 8 * 32);
+                    la64_vpaes_invmixcolumns_xtime_lasx(dyn, ninst, q0, v1, v2, d0, d1, d2, v0);
                 } else {
                     la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_dec_tables, 7);
                     VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
                     la64_vpaes_invsubbytes_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
-                    VLDI(v1, ((0b000<<9)|27));
-                    la64_vpaes_invmixcolumns_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0, v2);
+                    VLD(v1, x7, 7 * 16);
+                    VLD(v2, x7, 8 * 16);
+                    la64_vpaes_invmixcolumns_xtime_lsx(dyn, ninst, q0, v1, v2, d0, d1, d2, v0);
                 }
                 VXOR_Vxy(q0, q0, (s0 != -1) ? s0 : q2);
             } else {

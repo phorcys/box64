@@ -5,11 +5,11 @@
 
 typedef struct dynarec_la64_s dynarec_la64_t;
 
-extern const uint8_t la64_vpaes_enc_tables[7][16];
-extern const uint8_t la64_vpaes_dec_tables[7][16];
+extern const uint8_t la64_vpaes_enc_tables[9][16];
+extern const uint8_t la64_vpaes_dec_tables[9][16];
 extern const uint8_t la64_vpaes_keygen_tables[8][16];
-extern const uint8_t la64_vpaes_enc_tables_xv[7][32];
-extern const uint8_t la64_vpaes_dec_tables_xv[7][32];
+extern const uint8_t la64_vpaes_enc_tables_xv[9][32];
+extern const uint8_t la64_vpaes_dec_tables_xv[9][32];
 
 enum {
     LA64_VPAES_T0 = 16,
@@ -131,7 +131,7 @@ static inline void la64_vpaes_invsubbytes_lsx(dynarec_la64_t* dyn, int ninst, in
     VXOR_V(dst, t0, t1);
 }
 
-static inline void la64_vpaes_mixcolumns_lsx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3, int t4)
+static inline void la64_vpaes_mixcolumns_lsx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3)
 {
     (void)dyn;
     (void)ninst;
@@ -140,11 +140,11 @@ static inline void la64_vpaes_mixcolumns_lsx(dynarec_la64_t* dyn, int ninst, int
     VSHUF4I_B(t1, dst, 0x39);
     VSRLI_B(t2, t1, 7);
     VSHUF4I_B(t3, dst, 0x4e);
-    VSHUF4I_B(t4, dst, 0x93);
     VMUL_B(t2, t2, poly);
     VSLLI_B(dst, dst, 1);
-    VXOR_V(t3, t3, t4);
     VXOR_V(dst, dst, t0);
+    VSHUF4I_B(t0, t3, 0x39);
+    VXOR_V(t3, t3, t0);
     VSLLI_B(t0, t1, 1);
     VXOR_V(t0, t0, t2);
     VXOR_V(t0, t0, t1);
@@ -152,7 +152,33 @@ static inline void la64_vpaes_mixcolumns_lsx(dynarec_la64_t* dyn, int ninst, int
     VXOR_V(dst, dst, t3);
 }
 
-static inline void la64_vpaes_invmixcolumns_lsx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3, int t4)
+static inline void la64_vpaes_xtime_table_lsx(dynarec_la64_t* dyn, int ninst, int dst, int src, int tmp, int tab_lo, int tab_hi)
+{
+    (void)dyn;
+    (void)ninst;
+    VANDI_B(tmp, src, 0x0f);
+    VSRLI_B(dst, src, 4);
+    VSHUF_B(tmp, tab_lo, tab_lo, tmp);
+    VSHUF_B(dst, tab_hi, tab_hi, dst);
+    VXOR_V(dst, dst, tmp);
+}
+
+static inline void la64_vpaes_mixcolumns_xtime_lsx(dynarec_la64_t* dyn, int ninst, int dst, int tab_lo, int tab_hi, int t0, int t1, int t2, int t3)
+{
+    (void)dyn;
+    (void)ninst;
+    la64_vpaes_xtime_table_lsx(dyn, ninst, t0, dst, t3, tab_lo, tab_hi);
+    VSHUF4I_B(t1, dst, 0x39);
+    VSHUF4I_B(t2, dst, 0x4e);
+    la64_vpaes_xtime_table_lsx(dyn, ninst, dst, t1, t3, tab_lo, tab_hi);
+    VSHUF4I_B(t3, t2, 0x39);
+    VXOR_V(t2, t2, t3);
+    VXOR_V(dst, dst, t1);
+    VXOR_V(dst, dst, t0);
+    VXOR_V(dst, dst, t2);
+}
+
+static inline void la64_vpaes_invmixcolumns_lsx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3)
 {
     (void)dyn;
     (void)ninst;
@@ -167,7 +193,19 @@ static inline void la64_vpaes_invmixcolumns_lsx(dynarec_la64_t* dyn, int ninst, 
     VSLLI_B(t0, t0, 1);
     VXOR_V(t0, t0, t1);
     VXOR_V(dst, dst, t0);
-    la64_vpaes_mixcolumns_lsx(dyn, ninst, dst, poly, t0, t1, t2, t3, t4);
+    la64_vpaes_mixcolumns_lsx(dyn, ninst, dst, poly, t0, t1, t2, t3);
+}
+
+static inline void la64_vpaes_invmixcolumns_xtime_lsx(dynarec_la64_t* dyn, int ninst, int dst, int tab_lo, int tab_hi, int t0, int t1, int t2, int t3)
+{
+    (void)dyn;
+    (void)ninst;
+    VSHUF4I_B(t0, dst, 0x4e);
+    VXOR_V(t0, t0, dst);
+    la64_vpaes_xtime_table_lsx(dyn, ninst, t0, t0, t1, tab_lo, tab_hi);
+    la64_vpaes_xtime_table_lsx(dyn, ninst, t0, t0, t1, tab_lo, tab_hi);
+    VXOR_V(dst, dst, t0);
+    la64_vpaes_mixcolumns_xtime_lsx(dyn, ninst, dst, tab_lo, tab_hi, t0, t1, t2, t3);
 }
 
 static inline void la64_vpaes_subbytes_lasx(dynarec_la64_t* dyn, int ninst, int dst, int zero, int t0, int t1, int t2, int t3)
@@ -228,7 +266,7 @@ static inline void la64_vpaes_invsubbytes_lasx(dynarec_la64_t* dyn, int ninst, i
     XVXOR_V(dst, t0, t1);
 }
 
-static inline void la64_vpaes_mixcolumns_lasx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3, int t4)
+static inline void la64_vpaes_mixcolumns_lasx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3)
 {
     (void)dyn;
     (void)ninst;
@@ -237,11 +275,11 @@ static inline void la64_vpaes_mixcolumns_lasx(dynarec_la64_t* dyn, int ninst, in
     XVSHUF4I_B(t1, dst, 0x39);
     XVSRLI_B(t2, t1, 7);
     XVSHUF4I_B(t3, dst, 0x4e);
-    XVSHUF4I_B(t4, dst, 0x93);
     XVMUL_B(t2, t2, poly);
     XVSLLI_B(dst, dst, 1);
-    XVXOR_V(t3, t3, t4);
     XVXOR_V(dst, dst, t0);
+    XVSHUF4I_B(t0, t3, 0x39);
+    XVXOR_V(t3, t3, t0);
     XVSLLI_B(t0, t1, 1);
     XVXOR_V(t0, t0, t2);
     XVXOR_V(t0, t0, t1);
@@ -249,7 +287,33 @@ static inline void la64_vpaes_mixcolumns_lasx(dynarec_la64_t* dyn, int ninst, in
     XVXOR_V(dst, dst, t3);
 }
 
-static inline void la64_vpaes_invmixcolumns_lasx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3, int t4)
+static inline void la64_vpaes_xtime_table_lasx(dynarec_la64_t* dyn, int ninst, int dst, int src, int tmp, int tab_lo, int tab_hi)
+{
+    (void)dyn;
+    (void)ninst;
+    XVANDI_B(tmp, src, 0x0f);
+    XVSRLI_B(dst, src, 4);
+    XVSHUF_B(tmp, tab_lo, tab_lo, tmp);
+    XVSHUF_B(dst, tab_hi, tab_hi, dst);
+    XVXOR_V(dst, dst, tmp);
+}
+
+static inline void la64_vpaes_mixcolumns_xtime_lasx(dynarec_la64_t* dyn, int ninst, int dst, int tab_lo, int tab_hi, int t0, int t1, int t2, int t3)
+{
+    (void)dyn;
+    (void)ninst;
+    la64_vpaes_xtime_table_lasx(dyn, ninst, t0, dst, t3, tab_lo, tab_hi);
+    XVSHUF4I_B(t1, dst, 0x39);
+    XVSHUF4I_B(t2, dst, 0x4e);
+    la64_vpaes_xtime_table_lasx(dyn, ninst, dst, t1, t3, tab_lo, tab_hi);
+    XVSHUF4I_B(t3, t2, 0x39);
+    XVXOR_V(t2, t2, t3);
+    XVXOR_V(dst, dst, t1);
+    XVXOR_V(dst, dst, t0);
+    XVXOR_V(dst, dst, t2);
+}
+
+static inline void la64_vpaes_invmixcolumns_lasx(dynarec_la64_t* dyn, int ninst, int dst, int poly, int t0, int t1, int t2, int t3)
 {
     (void)dyn;
     (void)ninst;
@@ -264,7 +328,19 @@ static inline void la64_vpaes_invmixcolumns_lasx(dynarec_la64_t* dyn, int ninst,
     XVSLLI_B(t0, t0, 1);
     XVXOR_V(t0, t0, t1);
     XVXOR_V(dst, dst, t0);
-    la64_vpaes_mixcolumns_lasx(dyn, ninst, dst, poly, t0, t1, t2, t3, t4);
+    la64_vpaes_mixcolumns_lasx(dyn, ninst, dst, poly, t0, t1, t2, t3);
+}
+
+static inline void la64_vpaes_invmixcolumns_xtime_lasx(dynarec_la64_t* dyn, int ninst, int dst, int tab_lo, int tab_hi, int t0, int t1, int t2, int t3)
+{
+    (void)dyn;
+    (void)ninst;
+    XVSHUF4I_B(t0, dst, 0x4e);
+    XVXOR_V(t0, t0, dst);
+    la64_vpaes_xtime_table_lasx(dyn, ninst, t0, t0, t1, tab_lo, tab_hi);
+    la64_vpaes_xtime_table_lasx(dyn, ninst, t0, t0, t1, tab_lo, tab_hi);
+    XVXOR_V(dst, dst, t0);
+    la64_vpaes_mixcolumns_xtime_lasx(dyn, ninst, dst, tab_lo, tab_hi, t0, t1, t2, t3);
 }
 
 static inline void la64_vpaes_keygenassist_lsx(dynarec_la64_t* dyn, int ninst, int dst, int zero, int t0, int t1, int t2, int t3, int rcon, uint8_t imm)
