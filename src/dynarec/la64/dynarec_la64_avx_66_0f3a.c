@@ -20,6 +20,9 @@
 #include "dynarec_la64_functions.h"
 #include "../dynarec_helper.h"
 
+#define LA64_VPAES_EMITTERS
+#include "la64_crypto.h"
+
 uintptr_t dynarec64_AVX_66_0F3A(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, vex_t vex, int* ok, int* need_epilog)
 {
     (void)ip;
@@ -788,27 +791,43 @@ uintptr_t dynarec64_AVX_66_0F3A(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t i
         case 0xDF:
             INST_NAME("VAESKEYGENASSIST Gx, Ex, Ib");
             nextop = F8;
-            GETG;
-            avx_forget_reg(dyn, ninst, gd);
-            MOV32w(x1, gd); // gx
-            if (MODREG) {
-                ed = (nextop & 7) + (rex.b << 3);
-                avx_forget_reg(dyn, ninst, ed);
-                MOV32w(x2, ed);
-                MOV32w(x3, 0); // p = NULL
+            if (BOX64ENV(dynarec_vpaes)) {
+                GETEYx(q1, 0, 1);
+                GETGYx_empty(q0);
+                if (q0 != q1)
+                    VOR_V(q0, q1, q1);
+                d0 = fpu_get_scratch(dyn);
+                d1 = fpu_get_scratch(dyn);
+                d2 = fpu_get_scratch(dyn);
+                v0 = fpu_get_scratch(dyn);
+                v1 = fpu_get_scratch(dyn);
+                v2 = fpu_get_scratch(dyn);
+                u8 = F8;
+                la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_keygen_tables, 8);
+                la64_vpaes_keygenassist_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1, u8);
             } else {
-                MOV32w(x2, 0);
-                addr = geted(dyn, addr, ninst, nextop, &ed, x3, x2, &fixedaddress, rex, NULL, 0, 1);
-                if (ed != x3) {
-                    MV(x3, ed);
+                GETG;
+                avx_forget_reg(dyn, ninst, gd);
+                MOV32w(x1, gd); // gx
+                if (MODREG) {
+                    ed = (nextop & 7) + (rex.b << 3);
+                    avx_forget_reg(dyn, ninst, ed);
+                    MOV32w(x2, ed);
+                    MOV32w(x3, 0); // p = NULL
+                } else {
+                    MOV32w(x2, 0);
+                    addr = geted(dyn, addr, ninst, nextop, &ed, x3, x2, &fixedaddress, rex, NULL, 0, 1);
+                    if (ed != x3) {
+                        MV(x3, ed);
+                    }
                 }
-            }
-            u8 = F8;
-            MOV32w(x4, u8);
-            CALL4(const_native_aeskeygenassist, -1, x1, x2, x3, x4);
-            if (!vex.l) {
-                ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]));
-                ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]) + 8);
+                u8 = F8;
+                MOV32w(x4, u8);
+                CALL4(const_native_aeskeygenassist, -1, x1, x2, x3, x4);
+                if (!vex.l) {
+                    ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]));
+                    ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]) + 8);
+                }
             }
             break;
 

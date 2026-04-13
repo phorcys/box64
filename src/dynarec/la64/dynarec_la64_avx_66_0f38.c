@@ -20,6 +20,9 @@
 #include "dynarec_la64_functions.h"
 #include "../dynarec_helper.h"
 
+#define LA64_VPAES_EMITTERS
+#include "la64_crypto.h"
+
 uintptr_t dynarec64_AVX_66_0F38(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, vex_t vex, int* ok, int* need_epilog)
 {
     (void)ip;
@@ -1299,104 +1302,242 @@ uintptr_t dynarec64_AVX_66_0F38(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t i
         case 0xDB:
             INST_NAME("VAESIMC Gx, Ex");
             nextop = F8;
-            GETEYx(q1, 0, 0);
-            GETGYx_empty(q0);
-            if (q0 != q1) {
-                VOR_V(q0, q1, q1);
+            if (BOX64ENV(dynarec_vpaes)) {
+                GETEYx(q1, 0, 0);
+                GETGYx_empty(q0);
+                if (q0 != q1)
+                    VOR_V(q0, q1, q1);
+                d0 = fpu_get_scratch(dyn);
+                d1 = fpu_get_scratch(dyn);
+                d2 = fpu_get_scratch(dyn);
+                v0 = fpu_get_scratch(dyn);
+                v1 = fpu_get_scratch(dyn);
+                v2 = fpu_get_scratch(dyn);
+                VLDI(v2, ((0b000<<9)|27));
+                la64_vpaes_invmixcolumns_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+            } else {
+                GETEYx(q1, 0, 0);
+                GETGYx_empty(q0);
+                if (q0 != q1) {
+                    VOR_V(q0, q1, q1);
+                }
+                avx_forget_reg(dyn, ninst, gd);
+                MOV32w(x1, gd);
+                CALL(const_native_aesimc, -1, x1, 0);
+                GETGYx(q0, 1); // reget writable for mark zeroup hi-128bits.
             }
-            avx_forget_reg(dyn, ninst, gd);
-            MOV32w(x1, gd);
-            CALL(const_native_aesimc, -1, x1, 0);
-            GETGYx(q0, 1); // reget writable for mark zeroup hi-128bits.
             break;
         case 0xDC:
             INST_NAME("VAESENC Gx, Vx, Ex");
             nextop = F8;
-            GETGY_empty_VYEY_xy(q0, q1, q2, 0);
-            if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+            if (BOX64ENV(dynarec_vpaes)) {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (q0 == q2) {
+                    s0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(s0, q2, q2);
+                } else
+                    s0 = -1;
+                if (q0 != q1)
+                    VOR_Vxy(q0, q1, q1);
                 d0 = fpu_get_scratch(dyn);
-                VOR_Vxy(d0, q2, q2);
-            } else
-                d0 = -1;
-            if (gd != vex.v) {
-                VOR_Vxy(q0, q1, q1);
-            }
-            avx_forget_reg(dyn, ninst, gd);
-            MOV32w(x1, gd);
-            CALL(const_native_aese, -1, x1, 0);
-            if (vex.l) {
+                d1 = fpu_get_scratch(dyn);
+                d2 = fpu_get_scratch(dyn);
+                v0 = fpu_get_scratch(dyn);
+                v1 = fpu_get_scratch(dyn);
+                v2 = fpu_get_scratch(dyn);
+                if (vex.l) {
+                    la64_vpaes_load_tables_lasx(dyn, ninst, x7, (uintptr_t)la64_vpaes_enc_tables_xv, 7);
+                    // Keep the MixColumns polynomial in a register that is not live across
+                    // the SubBytes helper so XVLDI can issue as early as OoO allows.
+                    la64_vpaes_subbytes_lasx(dyn, ninst, q0, v1, d0, d1, d2, v0);
+                    XVSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                    XVLDI(v2, ((0b000<<9)|27));
+                    la64_vpaes_mixcolumns_lasx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                } else {
+                    la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_enc_tables, 7);
+                    la64_vpaes_subbytes_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0);
+                    VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                    VLDI(v2, ((0b000<<9)|27));
+                    la64_vpaes_mixcolumns_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                }
+                VXOR_Vxy(q0, q0, (s0 != -1) ? s0 : q2);
+            } else {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+                    d0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(d0, q2, q2);
+                } else
+                    d0 = -1;
+                if (gd != vex.v) {
+                    VOR_Vxy(q0, q1, q1);
+                }
+                avx_forget_reg(dyn, ninst, gd);
                 MOV32w(x1, gd);
-                CALL(const_native_aese_y, -1, x1, 0);
+                CALL(const_native_aese, -1, x1, 0);
+                if (vex.l) {
+                    MOV32w(x1, gd);
+                    CALL(const_native_aese_y, -1, x1, 0);
+                }
+                GETGYxy(q0, 1);
+                VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
             }
-            GETGYxy(q0, 1);
-            VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
             break;
+            
         case 0xDD:
             INST_NAME("VAESENCLAST Gx, Vx, Ex");
             nextop = F8;
-            GETGY_empty_VYEY_xy(q0, q1, q2, 0);
-            if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+            if (BOX64ENV(dynarec_vpaes)) {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (q0 == q2) {
+                    s0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(s0, q2, q2);
+                } else
+                    s0 = -1;
+                if (q0 != q1)
+                    VOR_Vxy(q0, q1, q1);
                 d0 = fpu_get_scratch(dyn);
-                VOR_Vxy(d0, q2, q2);
-            } else
-                d0 = -1;
-            if (gd != vex.v) {
-                VOR_Vxy(q0, q1, q1);
-            }
-            avx_forget_reg(dyn, ninst, gd);
-            MOV32w(x1, gd);
-            CALL(const_native_aeselast, -1, x1, 0);
-            if (vex.l) {
+                d1 = fpu_get_scratch(dyn);
+                d2 = fpu_get_scratch(dyn);
+                v0 = fpu_get_scratch(dyn);
+                v1 = fpu_get_scratch(dyn);
+                v2 = fpu_get_scratch(dyn);
+                if (vex.l) {
+                    la64_vpaes_load_tables_lasx(dyn, ninst, x7, (uintptr_t)la64_vpaes_enc_tables_xv, 7);
+                    la64_vpaes_subbytes_lasx(dyn, ninst, q0, d1, d2, v0, v1, v2);
+                    XVSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                } else {
+                    la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_enc_tables, 7);
+                    la64_vpaes_subbytes_lsx(dyn, ninst, q0, d1, d2, v0, v1, v2);
+                    VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                }
+                VXOR_Vxy(q0, q0, (s0 != -1) ? s0 : q2);
+                break;
+            } else {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+                    d0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(d0, q2, q2);
+                } else
+                    d0 = -1;
+                if (gd != vex.v) {
+                    VOR_Vxy(q0, q1, q1);
+                }
+                avx_forget_reg(dyn, ninst, gd);
                 MOV32w(x1, gd);
-                CALL(const_native_aeselast_y, -1, x1, 0);
+                CALL(const_native_aeselast, -1, x1, 0);
+                if (vex.l) {
+                    MOV32w(x1, gd);
+                    CALL(const_native_aeselast_y, -1, x1, 0);
+                }
+                GETGYxy(q0, 1);
+                VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
+                break;
             }
-            GETGYxy(q0, 1);
-            VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
-            break;
+            
         case 0xDE:
             INST_NAME("VAESDEC Gx, Vx, Ex"); // AES-NI
             nextop = F8;
-            GETGY_empty_VYEY_xy(q0, q1, q2, 0);
-            if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+            if (BOX64ENV(dynarec_vpaes)) {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (q0 == q2) {
+                    s0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(s0, q2, q2);
+                } else
+                    s0 = -1;
+                if (q0 != q1)
+                    VOR_Vxy(q0, q1, q1);
                 d0 = fpu_get_scratch(dyn);
-                VOR_Vxy(d0, q2, q2);
-            } else
-                d0 = -1;
-            if (gd != vex.v) {
-                VOR_Vxy(q0, q1, q1);
-            }
-            avx_forget_reg(dyn, ninst, gd);
-            MOV32w(x1, gd);
-            CALL(const_native_aesd, -1, x1, 0);
-            if (vex.l) {
+                d1 = fpu_get_scratch(dyn);
+                d2 = fpu_get_scratch(dyn);
+                v0 = fpu_get_scratch(dyn);
+                v1 = fpu_get_scratch(dyn);
+                v2 = fpu_get_scratch(dyn);
+                if (vex.l) {
+                    la64_vpaes_load_tables_lasx(dyn, ninst, x7, (uintptr_t)la64_vpaes_dec_tables_xv, 7);
+                    XVSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                    la64_vpaes_invsubbytes_lasx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                    XVLDI(v1, ((0b000<<9)|27));
+                    la64_vpaes_invmixcolumns_lasx(dyn, ninst, q0, v1, d0, d1, d2, v0, v2);
+                } else {
+                    la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_dec_tables, 7);
+                    VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                    la64_vpaes_invsubbytes_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                    VLDI(v1, ((0b000<<9)|27));
+                    la64_vpaes_invmixcolumns_lsx(dyn, ninst, q0, v1, d0, d1, d2, v0, v2);
+                }
+                VXOR_Vxy(q0, q0, (s0 != -1) ? s0 : q2);
+            } else {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+                    d0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(d0, q2, q2);
+                } else
+                    d0 = -1;
+                if (gd != vex.v) {
+                    VOR_Vxy(q0, q1, q1);
+                }
+                avx_forget_reg(dyn, ninst, gd);
                 MOV32w(x1, gd);
-                CALL(const_native_aesd_y, -1, x1, 0);
+                CALL(const_native_aesd, -1, x1, 0);
+                if (vex.l) {
+                    MOV32w(x1, gd);
+                    CALL(const_native_aesd_y, -1, x1, 0);
+                }
+                GETGYxy(q0, 1);
+                VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
             }
-            GETGYxy(q0, 1);
-            VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
             break;
+
         case 0xDF:
             INST_NAME("VAESDECLAST Gx, Vx, Ex"); // AES-NI
             nextop = F8;
-            GETGY_empty_VYEY_xy(q0, q1, q2, 0);
-            if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+            if (BOX64ENV(dynarec_vpaes)) {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (q0 == q2) {
+                    s0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(s0, q2, q2);
+                } else
+                    s0 = -1;
+                if (q0 != q1)
+                    VOR_Vxy(q0, q1, q1);
                 d0 = fpu_get_scratch(dyn);
-                VOR_Vxy(d0, q2, q2);
-            } else
-                d0 = -1;
-            if (gd != vex.v) {
-                VOR_Vxy(q0, q1, q1);
-            }
-            avx_forget_reg(dyn, ninst, gd);
-            MOV32w(x1, gd);
-            CALL(const_native_aesdlast, -1, x1, 0);
-            if (vex.l) {
+                d1 = fpu_get_scratch(dyn);
+                d2 = fpu_get_scratch(dyn);
+                v0 = fpu_get_scratch(dyn);
+                v1 = fpu_get_scratch(dyn);
+                v2 = fpu_get_scratch(dyn);
+                if (vex.l) {
+                    la64_vpaes_load_tables_lasx(dyn, ninst, x7, (uintptr_t)la64_vpaes_dec_tables_xv, 7);
+                    XVSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                    la64_vpaes_invsubbytes_lasx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                } else {
+                    la64_vpaes_load_tables_lsx(dyn, ninst, x7, (uintptr_t)la64_vpaes_dec_tables, 7);
+                    VSHUF_B(q0, q0, q0, LA64_VPAES_T6);
+                    la64_vpaes_invsubbytes_lsx(dyn, ninst, q0, v2, d0, d1, d2, v0, v1);
+                }
+                VXOR_Vxy(q0, q0, (s0 != -1) ? s0 : q2);
+            } else {
+                GETGY_empty_VYEY_xy(q0, q1, q2, 0);
+                if (MODREG && (gd == (nextop & 7) + (rex.b << 3))) {
+                    d0 = fpu_get_scratch(dyn);
+                    VOR_Vxy(d0, q2, q2);
+                } else
+                    d0 = -1;
+                if (gd != vex.v) {
+                    VOR_Vxy(q0, q1, q1);
+                }
+                avx_forget_reg(dyn, ninst, gd);
                 MOV32w(x1, gd);
-                CALL(const_native_aesdlast_y, -1, x1, 0);
+                CALL(const_native_aesdlast, -1, x1, 0);
+                if (vex.l) {
+                    MOV32w(x1, gd);
+                    CALL(const_native_aesdlast_y, -1, x1, 0);
+                }
+                GETGYxy(q0, 1);
+                VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
             }
-            GETGYxy(q0, 1);
-            VXOR_Vxy(q0, q0, (d0 != -1) ? d0 : q2);
             break;
+
         case 0xF7:
             INST_NAME("SHLX Gd, Ed, Vd");
             nextop = F8;
