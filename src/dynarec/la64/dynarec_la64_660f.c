@@ -4,6 +4,7 @@
 #include <errno.h>
 
 #include "debug.h"
+#include "env.h"
 #include "box64context.h"
 #include "box64cpu.h"
 #include "emu/x64emu_private.h"
@@ -1435,22 +1436,38 @@ uintptr_t dynarec64_660F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 case 0x44:
                     INST_NAME("PCLMULQDQ Gx, Ex, Ib");
                     nextop = F8;
-                    GETG;
-                    sse_forget_reg(dyn, ninst, gd);
-                    MOV32w(x1, gd); // gx
-                    if (MODREG) {
-                        ed = (nextop & 7) + (rex.b << 3);
-                        sse_forget_reg(dyn, ninst, ed);
-                        MOV32w(x2, ed);
-                        MOV32w(x3, 0); // p = NULL
+                    if (BOX64ENV(dynarec_pclmul)) {
+                        GETGX(q0, 1);
+                        GETEX(q1, 0, 1);
+                        u8 = F8;
+                        if (u8 & 1)
+                            VPICKVE2GR_D(x2, q0, 1);
+                        else
+                            VPICKVE2GR_D(x2, q0, 0);
+                        if (u8 & 0x10)
+                            VPICKVE2GR_D(x3, q1, 1);
+                        else
+                            VPICKVE2GR_D(x3, q1, 0);
+                        LA64_PCLMUL64_CTZ_GPR(x2, x3, x4, x5, x6, x7, x1);
+                        LA64_PCLMUL128_PACK_LSX(q0, x5, x6);
                     } else {
-                        MOV32w(x2, 0);
-                        addr = geted(dyn, addr, ninst, nextop, &ed, x3, x5, &fixedaddress, rex, NULL, 0, 1);
-                        if (ed != x3) MV(x3, ed);
+                        GETG;
+                        sse_forget_reg(dyn, ninst, gd);
+                        MOV32w(x1, gd); // gx
+                        if (MODREG) {
+                            ed = (nextop & 7) + (rex.b << 3);
+                            sse_forget_reg(dyn, ninst, ed);
+                            MOV32w(x2, ed);
+                            MOV32w(x3, 0); // p = NULL
+                        } else {
+                            MOV32w(x2, 0);
+                            addr = geted(dyn, addr, ninst, nextop, &ed, x3, x5, &fixedaddress, rex, NULL, 0, 1);
+                            if (ed != x3) MV(x3, ed);
+                        }
+                        u8 = F8;
+                        MOV32w(x4, u8);
+                        CALL4(const_native_pclmul, -1, x1, x2, x3, x4);
                     }
-                    u8 = F8;
-                    MOV32w(x4, u8);
-                    CALL4(const_native_pclmul, -1, x1, x2, x3, x4);
                     break;
                 case 0x61:
                     INST_NAME("PCMPESTRI Gx, Ex, Ib");

@@ -735,24 +735,70 @@ uintptr_t dynarec64_AVX_66_0F3A(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t i
             INST_NAME("VPCLMULQDQ Gx, Vx, Ex, Ib");
             nextop = F8;
             GETG;
-            avx_forget_reg(dyn, ninst, gd);
-            avx_reflect_reg(dyn, ninst, vex.v);
-            MOV32w(x1, gd);    // gx
-            MOV32w(x2, vex.v); // vx
-            if (MODREG) {
-                ed = (nextop & 7) + (rex.b << 3);
-                avx_forget_reg(dyn, ninst, ed);
-                MOV32w(x3, ed); // ex
+            if (BOX64ENV(dynarec_pclmul)) {
+                if (vex.l) {
+                    GETVYy(v1, 0);
+                    GETEYy(v2, 0, 1);
+                    if (gd == vex.v) {
+                        d0 = fpu_get_scratch(dyn);
+                        XVOR_V(d0, v1, v1);
+                        v1 = d0;
+                    }
+                    if (MODREG) {
+                        ed = (nextop & 7) + (rex.b << 3);
+                        if (gd == ed) {
+                            d1 = fpu_get_scratch(dyn);
+                            XVOR_V(d1, v2, v2);
+                            v2 = d1;
+                        }
+                    }
+                    q0 = avx_get_reg_empty(dyn, ninst, x4, gd, LSX_AVX_WIDTH_256);
+                    XVXOR_V(q0, q0, q0);
+                    u8 = F8;
+
+                    XVPICKVE2GR_D(x2, v1, (u8 & 1) ? 1 : 0);
+                    XVPICKVE2GR_D(x3, v2, (u8 & 0x10) ? 1 : 0);
+                    LA64_PCLMUL64_CTZ_GPR(x2, x3, x4, x5, x6, x7, x1);
+                    XVINSGR2VR_D(q0, x5, 0);
+                    XVINSGR2VR_D(q0, x6, 1);
+
+                    XVPICKVE2GR_D(x2, v1, (u8 & 1) ? 3 : 2);
+                    XVPICKVE2GR_D(x3, v2, (u8 & 0x10) ? 3 : 2);
+                    LA64_PCLMUL64_CTZ_GPR(x2, x3, x4, x5, x6, x7, x1);
+                    XVINSGR2VR_D(q0, x5, 2);
+                    XVINSGR2VR_D(q0, x6, 3);
+                } else {
+                    GETVYx(v1, 0);
+                    GETEYx(v2, 0, 1);
+                    u8 = F8;
+                    VPICKVE2GR_D(x2, v1, (u8 & 1) ? 1 : 0);
+                    VPICKVE2GR_D(x3, v2, (u8 & 0x10) ? 1 : 0);
+                    q0 = avx_get_reg_empty(dyn, ninst, x4, gd, LSX_AVX_WIDTH_128);
+                    LA64_PCLMUL64_CTZ_GPR(x2, x3, x4, x5, x6, x7, x1);
+                    LA64_PCLMUL128_PACK_LSX(q0, x5, x6);
+                    ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]));
+                    ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]) + 8);
+                }
             } else {
-                addr = geted(dyn, addr, ninst, nextop, &ed, x3, x5, &fixedaddress, rex, NULL, 0, 1);
-                if (ed != x3) MV(x3, ed);
-            }
-            u8 = F8;
-            MOV32w(x4, u8);
-            CALL4_(vex.l ? const_native_pclmul_y : const_native_pclmul_x, -1, x3, x1, x2, x3, x4);
-            if (!vex.l) {
-                ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]));
-                ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]) + 8);
+                avx_forget_reg(dyn, ninst, gd);
+                avx_reflect_reg(dyn, ninst, vex.v);
+                MOV32w(x1, gd);    // gx
+                MOV32w(x2, vex.v); // vx
+                if (MODREG) {
+                    ed = (nextop & 7) + (rex.b << 3);
+                    avx_forget_reg(dyn, ninst, ed);
+                    MOV32w(x3, ed); // ex
+                } else {
+                    addr = geted(dyn, addr, ninst, nextop, &ed, x3, x5, &fixedaddress, rex, NULL, 0, 1);
+                    if (ed != x3) MV(x3, ed);
+                }
+                u8 = F8;
+                MOV32w(x4, u8);
+                CALL4_(vex.l ? const_native_pclmul_y : const_native_pclmul_x, -1, x3, x1, x2, x3, x4);
+                if (!vex.l) {
+                    ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]));
+                    ST_D(xZR, xEmu, offsetof(x64emu_t, ymm[gd]) + 8);
+                }
             }
             break;
         case 0x4A:

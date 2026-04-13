@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 typedef struct dynarec_la64_s dynarec_la64_t;
+typedef struct x64emu_s x64emu_t;
 
 extern const uint8_t la64_vpaes_enc_tables[9][16];
 extern const uint8_t la64_vpaes_dec_tables[9][16];
@@ -54,6 +55,35 @@ enum {
 };
 
 #ifdef LA64_VPAES_EMITTERS
+
+// Uses x1-x7 scratch GPRs only, so it can be expanded multiple times in one opcode path.
+#define LA64_PCLMUL64_CTZ_GPR(LHS, RHS, SHIFT, RES_LO, RES_HI, TMP_LO, TMP_HI) \
+    do {                                                                         \
+        XOR((RES_LO), (RES_LO), (RES_LO));                                       \
+        XOR((RES_HI), (RES_HI), (RES_HI));                                       \
+        /* Skip the 12-instruction loop body when lhs is zero. */                \
+        BEQZ((LHS), 52);                                                         \
+        CTZ_D((SHIFT), (LHS));                                                   \
+        ADDI_D((TMP_HI), (LHS), -1);                                             \
+        AND((LHS), (LHS), (TMP_HI));                                             \
+        SLL_D((TMP_LO), (RHS), (SHIFT));                                         \
+        ADDI_D((TMP_HI), xZR, 64);                                               \
+        SUB_D((TMP_HI), (TMP_HI), (SHIFT));                                      \
+        SRL_D((TMP_HI), (RHS), (TMP_HI));                                        \
+        SNEZ((SHIFT), (SHIFT));                                                  \
+        NEG_D((SHIFT), (SHIFT));                                                 \
+        AND((TMP_HI), (TMP_HI), (SHIFT));                                        \
+        XOR((RES_LO), (RES_LO), (TMP_LO));                                       \
+        XOR((RES_HI), (RES_HI), (TMP_HI));                                       \
+        BNEZ((LHS), -48);                                                        \
+    } while (0)
+
+#define LA64_PCLMUL128_PACK_LSX(DST, LO, HI) \
+    do {                                     \
+        VXOR_V((DST), (DST), (DST));         \
+        VINSGR2VR_D((DST), (LO), 0);         \
+        VINSGR2VR_D((DST), (HI), 1);         \
+    } while (0)
 
 static inline void la64_vpaes_load_tables_lsx(dynarec_la64_t* dyn, int ninst, int addr_reg, uintptr_t pool, int count)
 {
