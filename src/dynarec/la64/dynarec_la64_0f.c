@@ -26,6 +26,9 @@
 #include "elfloader.h"
 #include "../dynarec_helper.h"
 
+#define LA64_VPAES_EMITTERS
+#include "la64_crypto.h"
+
 uintptr_t dynarec64_0F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog)
 {
     (void)ip;
@@ -41,8 +44,8 @@ uintptr_t dynarec64_0F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
     int32_t i32, i32_;
     int cacheupd = 0;
     int v0, v1;
-    int q0, q1;
-    int d0, d1;
+    int q0, q1, q2, q3;
+    int d0, d1, d2;
     int s0, s1;
     uint64_t tmp64u;
     int64_t j64;
@@ -54,6 +57,8 @@ uintptr_t dynarec64_0F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
     MAYUSE(eb2);
     MAYUSE(q0);
     MAYUSE(q1);
+    MAYUSE(q2);
+    MAYUSE(q3);
     MAYUSE(d0);
     MAYUSE(d1);
     MAYUSE(s0);
@@ -686,37 +691,87 @@ uintptr_t dynarec64_0F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                             break;
                     }
                     nextop = F8;
+                    GETG;
+                    q0 = sse_get_reg(dyn, ninst, x1, gd, 0);
                     if (MODREG) {
                         ed = (nextop & 7) + (rex.b << 3);
-                        sse_reflect_reg(dyn, ninst, ed);
-                        ADDI_D(x2, xEmu, offsetof(x64emu_t, xmm[ed]));
-                        ed = x2;
+                        if (ed == gd) {
+                            q1 = fpu_get_scratch(dyn);
+                            VOR_V(q1, q0, q0);
+                        } else {
+                            q1 = sse_get_reg(dyn, ninst, x1, ed, 0);
+                        }
                     } else {
                         SMREAD();
-                        addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 0, 0);
+                        addr = geted(dyn, addr, ninst, nextop, &ed, x3, x2, &fixedaddress, rex, NULL, 1, 0);
+                        q1 = fpu_get_scratch(dyn);
+                        VLD(q1, ed, fixedaddress);
                     }
-                    GETG;
-                    sse_forget_reg(dyn, ninst, gd);
-                    ADDI_D(x1, xEmu, offsetof(x64emu_t, xmm[gd]));
-                    sse_reflect_reg(dyn, ninst, 0);
+                    q0 = sse_get_reg_empty(dyn, ninst, x1, gd);
                     switch (u8) {
                         case 0xC8:
-                            CALL(const_sha1nexte, -1, x1, ed);
+                            la64_sha1nexte_lsx(dyn, ninst, q0, q1);
                             break;
                         case 0xC9:
-                            CALL(const_sha1msg1, -1, x1, ed);
+                            la64_sha1msg1_lsx(dyn, ninst, q0, q1);
                             break;
                         case 0xCA:
-                            CALL(const_sha1msg2, -1, x1, ed);
+                            la64_sha1msg2_lsx(dyn, ninst, q0, q1);
                             break;
                         case 0xCB:
-                            CALL(const_sha256rnds2, -1, x1, ed);
+                            q2 = sse_get_reg(dyn, ninst, x1, 0, 0);
+                            // SHA256RNDS2 reads XMM0 implicitly. When gd==0, dst aliases XMM0
+                            // and the old XMM0 value must be preserved in a scratch first.
+                            if (MODREG) {
+                                if (gd == 0) {
+                                    q3 = fpu_get_scratch(dyn);
+                                    VOR_V(q3, q2, q2);
+                                    q2 = q3;
+                                    v0 = fpu_get_scratch(dyn);
+                                    v1 = fpu_get_scratch(dyn);
+                                    d0 = fpu_get_scratch(dyn);
+                                    d1 = fpu_get_scratch(dyn);
+                                    d2 = fpu_get_scratch(dyn);
+                                    s0 = fpu_get_scratch(dyn);
+                                    la64_sha256rnds2_lsx_pure6_modreg(dyn, ninst, q0, q1, q2, v0, v1, d0, d1, d2, s0);
+                                } else {
+                                    q3 = fpu_get_scratch(dyn);
+                                    VOR_V(q3, q2, q2);
+                                    q2 = q3;
+                                    v0 = fpu_get_scratch(dyn);
+                                    v1 = fpu_get_scratch(dyn);
+                                    d0 = fpu_get_scratch(dyn);
+                                    d1 = fpu_get_scratch(dyn);
+                                    d2 = fpu_get_scratch(dyn);
+                                    s0 = fpu_get_scratch(dyn);
+                                    s1 = fpu_get_scratch(dyn);
+                                    la64_sha256rnds2_lsx_pure7_scratch(dyn, ninst, q0, q1, q2, v0, v1, d0, d1, d2, s0, s1);
+                                }
+                            } else {
+                                if (gd == 0) {
+                                    q3 = fpu_get_scratch(dyn);
+                                    VOR_V(q3, q2, q2);
+                                    q2 = q3;
+                                    v0 = fpu_get_scratch(dyn);
+                                    d2 = fpu_get_scratch(dyn);
+                                    la64_sha256rnds2_lsx_mem_fallback(dyn, ninst, q0, q1, q2, v0, d2);
+                                } else {
+                                    v0 = fpu_get_scratch(dyn);
+                                    v1 = fpu_get_scratch(dyn);
+                                    d0 = fpu_get_scratch(dyn);
+                                    d1 = fpu_get_scratch(dyn);
+                                    d2 = fpu_get_scratch(dyn);
+                                    s0 = fpu_get_scratch(dyn);
+                                    s1 = fpu_get_scratch(dyn);
+                                    la64_sha256rnds2_lsx_pure7_scratch(dyn, ninst, q0, q1, q2, v0, v1, d0, d1, d2, s0, s1);
+                                }
+                            }
                             break;
                         case 0xCC:
-                            CALL(const_sha256msg1, -1, x1, ed);
+                            la64_sha256msg1_lsx(dyn, ninst, q0, q1);
                             break;
                         case 0xCD:
-                            CALL(const_sha256msg2, -1, x1, ed);
+                            la64_sha256msg2_lsx(dyn, ninst, q0, q1);
                             break;
                     }
                     break;
@@ -775,21 +830,25 @@ uintptr_t dynarec64_0F(dynarec_la64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 case 0xCC:
                     INST_NAME("SHA1RNDS4 Gx, Ex, Ib");
                     nextop = F8;
+                    GETG;
+                    q0 = sse_get_reg(dyn, ninst, x1, gd, 0);
                     if (MODREG) {
                         ed = (nextop & 7) + (rex.b << 3);
-                        sse_reflect_reg(dyn, ninst, ed);
-                        ADDI_D(x2, xEmu, offsetof(x64emu_t, xmm[ed]));
-                        wback = x2;
+                        if (ed == gd) {
+                            q1 = fpu_get_scratch(dyn);
+                            VOR_V(q1, q0, q0);
+                        } else {
+                            q1 = sse_get_reg(dyn, ninst, x1, ed, 0);
+                        }
                     } else {
                         SMREAD();
-                        addr = geted(dyn, addr, ninst, nextop, &wback, x2, x1, &fixedaddress, rex, NULL, 0, 1);
+                        addr = geted(dyn, addr, ninst, nextop, &ed, x3, x2, &fixedaddress, rex, NULL, 1, 1);
+                        q1 = fpu_get_scratch(dyn);
+                        VLD(q1, ed, fixedaddress);
                     }
                     u8 = F8;
-                    GETG;
-                    sse_forget_reg(dyn, ninst, gd);
-                    ADDI_D(x1, xEmu, offsetof(x64emu_t, xmm[gd]));
-                    MOV32w(x3, u8);
-                    CALL4(const_sha1rnds4, -1, x1, wback, x3, 0);
+                    q0 = sse_get_reg_empty(dyn, ninst, x1, gd);
+                    la64_sha1rnds4_lsx(dyn, ninst, q0, q1, u8);
                     break;
                 default:
                     DEFAULT;
